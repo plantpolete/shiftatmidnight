@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Shift at Midnight</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}
+#unity-container{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+#unity-canvas{width:100%;height:100%;background:#000;outline:none;touch-action:none}
+#loading{position:fixed;z-index:5;inset:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:#080808;color:#eee;font:16px Arial,sans-serif;text-align:center;padding:24px}
+#loading strong{font-size:clamp(22px,4vw,38px)}#bar{width:min(360px,80vw);height:8px;background:#333;border-radius:8px;overflow:hidden}
+#progress{height:100%;width:0;background:#eee;transition:width .2s}
+#error{max-width:700px;color:#ff8c8c;white-space:pre-wrap;overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<div id="loading"><strong>SHIFT AT MIDNIGHT</strong><div id="message">Preparing game files…</div><div id="bar"><div id="progress"></div></div><div id="error"></div></div>
+<div id="unity-container"><canvas id="unity-canvas" tabindex="-1"></canvas></div>
+<script>
+(() => {
+ const build="Build", base=build+"/ShiftAtMidnightPort";
+ const message=document.getElementById("message"), progress=document.getElementById("progress"), error=document.getElementById("error");
+ function fail(err){message.textContent="The game could not be loaded.";error.textContent=String(err)+"\n\nTry opening this page through a web server (not file://) and make sure all Build and StreamingAssets files are uploaded.";}
+ async function mergeParts(name,count,offset){
+   const chunks=[];
+   for(let i=1;i<=count;i++){
+     message.textContent=`Downloading ${name} (${i}/${count})…`;
+     const response=await fetch(`${base}.${name}.part${i}`,{cache:"no-store"});
+     if(!response.ok) throw new Error(`Could not load ${name}.part${i} (HTTP ${response.status}).`);
+     chunks.push(await response.arrayBuffer());
+     progress.style.width=`${Math.round((offset+(i/count)*(name==="data"?50:30)))}%`;
+   }
+   return URL.createObjectURL(new Blob(chunks,{type:name==="wasm"?"application/wasm":"application/octet-stream"}));
+ }
+ async function start(){
+   try{
+     const [dataUrl,wasmUrl]=await Promise.all([mergeParts("data",5,0),mergeParts("wasm",2,50)]);
+     message.textContent="Starting Unity…";progress.style.width="85%";
+     const loader=document.createElement("script");
+     loader.src=build+"/ShiftAtMidnightPort.loader.js";
+     loader.onerror=()=>fail("Could not load Unity loader script.");
+     loader.onload=()=>{
+       const config={dataUrl,frameworkUrl:build+"/ShiftAtMidnightPort.framework.js",codeUrl:wasmUrl,
+         streamingAssetsUrl:"StreamingAssets",companyName:"slqntdevss",productName:"ShiftAtMidnight",productVersion:"1.00",
+         matchWebGLToCanvasSize:true};
+       createUnityInstance(document.getElementById("unity-canvas"),config,p=>{
+         progress.style.width=`${Math.round(85+p*15)}%`;
+         message.textContent="Loading game…";
+       }).then(instance=>{
+         window.unityInstance=instance;
+         document.getElementById("loading").remove();
+         document.getElementById("unity-canvas").focus();
+       }).catch(fail);
+     };
+     document.body.appendChild(loader);
+   }catch(e){fail(e);}
+ }
+ start();
+})();
+</script>
+</body>
+</html>
